@@ -40,14 +40,14 @@ class QAgent:
         #Hyperparameters. Play around with these values!!
         
         self.discrete_sizes = [25, 25] # Represents how many parts you want to discretize your observation space in. First element represents parts for position of car, and second for velocity of car.
-        self.alpha = 0.1 # As defined in update rule
-        self.gamma = 0.95 # As defined in update rule
+        self.alpha = 0.2 # As defined in update rule
+        self.gamma = 0.9 # As defined in update rule
         
         self.num_train_episodes = 25000 #Number of episodes to train the model for
         self.epsilon = 1 #Initial value for epsilon-greedy behavior
-        self.num_episodes_decay = 15000 # Number of episodes to act epsilon-greedily for, after which epsilon becomes 0
+        self.num_episodes_decay = 10000 # Number of episodes to act epsilon-greedily for, after which epsilon becomes 0
         self.epsilon_decay = self.epsilon / self.num_episodes_decay # Linear decay of epsilon, that is the amount to be decreased from epsilon after every episode termination
-        
+        self.alpha_decay=self.alpha/self.num_episodes_decay
         '''
         Q-Table. We have provided one way to initialise it, and tried to keep it general, so you even try a different environment. You are adviced to think of other ways you could have initialised it.
         
@@ -55,7 +55,7 @@ class QAgent:
         
         * operator opens the array. So *[1,2] represents 1,2. Hence *self.discrete_sizes, self.actions represents 25, 25, 3 here
         '''
-        self.q_table = np.random.uniform(low=-2, high=0, size=(*self.discrete_sizes, self.actions))
+        self.q_table = np.random.rand(*self.discrete_sizes, self.actions)
         
     def get_state_index(self, state):
         '''
@@ -67,7 +67,9 @@ class QAgent:
         
         Return a tuple containing the indices along each dimension
         '''
-        pass
+        sections = (self.observation_space_high - self.observation_space_low) / self.discrete_sizes
+        state_indices = tuple(np.floor((state - self.observation_space_low) / sections).astype(int))
+        return state_indices
 
     def update(self, state, action, reward, next_state, is_terminal):
         '''
@@ -75,17 +77,26 @@ class QAgent:
         First discretize both the state and next_state to get indices in q-table.
         The boolean is_terminal here represents whether the state action pair resulted in termination (NOT TRUNCATION) of environment. In this case, update the value by considering max_a' q(s', a,) = 0 (consult theory for why) and not based on q-table.
         '''
+        state_index=self.get_state_index(state)
+        next_state_index=self.get_state_index(next_state)
         if is_terminal:
-            pass
+            td_target=reward
+            td_error=td_target-self.q_table[state_index,action]
+            self.q_table[state_index,action]+=self.alpha*td_error
         else:
-            pass
+            td_target=reward+self.gamma*self.q_table[next_state_index].max()
+            td_error=td_target-self.q_table[state_index][action]
+            self.q_table[state_index,action]+=self.alpha*td_error
     
     def get_action(self):    
         '''
         Get the action either greedily, or randomly based on epsilon (You may use self.env.action_space.sample() to get a random action). Return an int representing action, based on self.state. Remember to discretize self.state first
         '''
-        pass
-    
+        disc_state=self.get_state_index(self.state)
+        if(np.random.random()>self.epsilon):
+            return np.argmax(self.q_table[disc_state])
+        else:
+            return np.random.randint(self.actions)
     
     def env_step(self):
         '''
@@ -106,10 +117,12 @@ class QAgent:
         done = False
         eval_state = eval_env.reset()[0]
         while not done:
-            action = None # Take action based on greedy strategy now
+            eval_state_index=self.get_state_index(eval_state)
+            action = np.argmax(self.q_table[eval_state_index]) # Take action based on greedy strategy now
             next_state, reward, terminated, truncated, info = eval_env.step(action)
             
             eval_env.render() #Renders the environment on a window.
+            print(reward)
             
             done = terminated or truncated
             eval_state = next_state
@@ -123,7 +136,6 @@ class QAgent:
             self.state = self.env.reset()[0] # Reset environment after end of episode
             
             self.epsilon = max(0, self.epsilon - self.epsilon_decay) #Update epsilon after every episode
-            
             if episode % eval_intervals == 0:
                 #Check performance of agent
                 self.agent_eval()
